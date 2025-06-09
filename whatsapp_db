@@ -1,0 +1,366 @@
+-- phpMyAdmin SQL Dump
+-- version 5.2.0
+-- https://www.phpmyadmin.net/
+--
+-- Host: localhost:3306
+-- Generation Time: Jun 08, 2025 at 11:24 PM
+-- Server version: 8.0.30
+-- PHP Version: 8.1.10
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+
+--
+-- Database: `whatsapp_db`
+--
+
+DELIMITER $$
+--
+-- Procedures
+--
+CREATE DEFINER=`root`@`localhost` PROCEDURE `CleanOldMessages` (IN `days_to_keep` INT)   BEGIN
+    DELETE FROM messages 
+    WHERE created_at < DATE_SUB(NOW(), INTERVAL days_to_keep DAY)
+    AND status IN ('SENT', 'DELIVERED');
+    
+    SELECT ROW_COUNT() as deleted_messages;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `GetDailyStats` (IN `target_date` DATE)   BEGIN
+    SELECT 
+        COALESCE(COUNT(*), 0) as total_messages,
+        COALESCE(SUM(CASE WHEN status = 'SENT' THEN 1 ELSE 0 END), 0) as sent_messages,
+        COALESCE(SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END), 0) as failed_messages,
+        COALESCE(SUM(CASE WHEN file_url IS NOT NULL THEN 1 ELSE 0 END), 0) as messages_with_files
+    FROM messages 
+    WHERE DATE(created_at) = target_date;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `GetMessageHistory` (IN `target_phone` VARCHAR(20), IN `limit_count` INT)   BEGIN
+    SELECT 
+        id,
+        phone_number,
+        text_message,
+        file_url,
+        file_name,
+        file_type,
+        status,
+        whatsapp_message_id,
+        created_at
+    FROM messages 
+    WHERE phone_number = target_phone
+    ORDER BY created_at DESC
+    LIMIT limit_count;
+END$$
+
+DELIMITER ;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `app_config`
+--
+
+CREATE TABLE `app_config` (
+  `id` int NOT NULL,
+  `config_key` varchar(100) NOT NULL,
+  `config_value` text,
+  `description` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `app_config`
+--
+
+INSERT INTO `app_config` (`id`, `config_key`, `config_value`, `description`, `created_at`, `updated_at`) VALUES
+(1, 'whatsapp_api_url', 'https://graph.facebook.com/v18.0', 'URL base de la API de WhatsApp', '2025-06-08 21:50:44', '2025-06-08 21:50:44'),
+(2, 'max_file_size_mb', '10', 'Tamaño máximo de archivo en MB', '2025-06-08 21:50:44', '2025-06-08 21:50:44'),
+(3, 'allowed_file_types', 'jpg,jpeg,png,gif,pdf,mp4,avi,mov,mp3,wav,ogg', 'Tipos de archivo permitidos', '2025-06-08 21:50:44', '2025-06-08 21:50:44'),
+(4, 'daily_message_limit', '1000', 'Límite diario de mensajes', '2025-06-08 21:50:44', '2025-06-08 21:50:44'),
+(5, 'retry_attempts', '3', 'Número de reintentos para mensajes fallidos', '2025-06-08 21:50:44', '2025-06-08 21:50:44');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `daily_stats`
+--
+
+CREATE TABLE `daily_stats` (
+  `id` int NOT NULL,
+  `date` date NOT NULL,
+  `total_messages` int DEFAULT '0',
+  `sent_messages` int DEFAULT '0',
+  `failed_messages` int DEFAULT '0',
+  `total_files` int DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `daily_stats`
+--
+
+INSERT INTO `daily_stats` (`id`, `date`, `total_messages`, `sent_messages`, `failed_messages`, `total_files`, `created_at`, `updated_at`) VALUES
+(1, '2025-06-08', 9, 3, 2, 1, '2025-06-08 21:50:44', '2025-06-08 23:10:54');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `error_logs`
+--
+
+CREATE TABLE `error_logs` (
+  `id` bigint NOT NULL,
+  `message_id` bigint DEFAULT NULL,
+  `error_type` varchar(50) DEFAULT NULL,
+  `error_message` text,
+  `stack_trace` text,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `messages`
+--
+
+CREATE TABLE `messages` (
+  `id` bigint NOT NULL,
+  `phone_number` varchar(255) NOT NULL,
+  `text_message` text,
+  `file_url` varchar(255) DEFAULT NULL,
+  `file_name` varchar(255) DEFAULT NULL,
+  `file_type` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `status` enum('PENDING','SENT','DELIVERED','FAILED') DEFAULT 'PENDING',
+  `whatsapp_message_id` varchar(255) DEFAULT NULL,
+  `error_message` varchar(1000) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `messages`
+--
+
+INSERT INTO `messages` (`id`, `phone_number`, `text_message`, `file_url`, `file_name`, `file_type`, `created_at`, `status`, `whatsapp_message_id`, `error_message`) VALUES
+(1, '+51987654321', 'Mensaje de prueba 1', NULL, NULL, NULL, '2025-06-08 21:50:44', 'SENT', NULL, NULL),
+(2, '+51987654321', 'Mensaje de prueba 2', NULL, NULL, NULL, '2025-06-08 21:50:44', 'DELIVERED', NULL, NULL),
+(3, '+51123456789', 'Hola, este es un mensaje de prueba', NULL, NULL, NULL, '2025-06-08 21:50:44', 'SENT', NULL, NULL),
+(4, '+51987654321', 'Mensaje con error', NULL, NULL, NULL, '2025-06-08 21:50:44', 'FAILED', NULL, NULL),
+(5, '+51987654321', 'Mensaje con imagen', 'https://res.cloudinary.com/demo/image/upload/sample.jpg', 'sample.jpg', 'image/jpeg', '2025-06-08 21:50:44', 'SENT', NULL, NULL),
+(6, '+51940123545', 'Buenos Dias', 'https://res.cloudinary.com/ddkdsx3fg/image/upload/v1749424123/whatsapp_files/dcaypctxste4ntw8ovcm.jpg', '1000000086.jpg', 'application/octet-stream', '2025-06-08 23:08:41', 'PENDING', NULL, NULL),
+(7, '+51940123545', 'Buenos Dias', 'https://res.cloudinary.com/ddkdsx3fg/image/upload/v1749424130/whatsapp_files/p0xbilvoybqqxq7g3a1x.jpg', '1000000086.jpg', 'application/octet-stream', '2025-06-08 23:08:48', 'PENDING', NULL, NULL),
+(8, '+51940123545', 'Buenos Dias', 'https://res.cloudinary.com/ddkdsx3fg/image/upload/v1749424255/whatsapp_files/jcyy3hwz5soyy4my2xdx.jpg', '1000000086.jpg', 'application/octet-stream', '2025-06-08 23:10:53', 'PENDING', NULL, NULL),
+(9, '+51940123545', NULL, NULL, NULL, NULL, '2025-06-08 23:10:55', 'FAILED', NULL, 'Error enviando archivo de WhatsApp: 400 Bad Request on POST request for \"https://graph.facebook.com/v18.0/51931818268/messages\": \"{\"error\":{\"message\":\"(#12) singular published story API is deprecated for versions v2.4 and higher\",\"type\":\"OAuthException\",\"code\":12,\"fbtrace_id\":\"ADHB49cUBKq0K6hdd2lIJNA\"}}\"');
+
+--
+-- Triggers `messages`
+--
+DELIMITER $$
+CREATE TRIGGER `update_daily_stats_after_insert` AFTER INSERT ON `messages` FOR EACH ROW BEGIN
+    INSERT INTO daily_stats (date, total_messages, sent_messages, failed_messages, total_files)
+    VALUES (
+        DATE(NEW.created_at),
+        1,
+        CASE WHEN NEW.status = 'SENT' THEN 1 ELSE 0 END,
+        CASE WHEN NEW.status = 'FAILED' THEN 1 ELSE 0 END,
+        CASE WHEN NEW.file_url IS NOT NULL THEN 1 ELSE 0 END
+    )
+    ON DUPLICATE KEY UPDATE
+        total_messages = total_messages + 1,
+        sent_messages = sent_messages + CASE WHEN NEW.status = 'SENT' THEN 1 ELSE 0 END,
+        failed_messages = failed_messages + CASE WHEN NEW.status = 'FAILED' THEN 1 ELSE 0 END,
+        total_files = total_files + CASE WHEN NEW.file_url IS NOT NULL THEN 1 ELSE 0 END,
+        updated_at = CURRENT_TIMESTAMP;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `update_daily_stats_after_update` AFTER UPDATE ON `messages` FOR EACH ROW BEGIN
+    IF OLD.status != NEW.status THEN
+        INSERT INTO daily_stats (date, total_messages, sent_messages, failed_messages, total_files)
+        VALUES (
+            DATE(NEW.created_at),
+            0,
+            CASE WHEN NEW.status = 'SENT' AND OLD.status != 'SENT' THEN 1
+                 WHEN OLD.status = 'SENT' AND NEW.status != 'SENT' THEN -1
+                 ELSE 0 END,
+            CASE WHEN NEW.status = 'FAILED' AND OLD.status != 'FAILED' THEN 1
+                 WHEN OLD.status = 'FAILED' AND NEW.status != 'FAILED' THEN -1
+                 ELSE 0 END,
+            0
+        )
+        ON DUPLICATE KEY UPDATE
+            sent_messages = sent_messages + 
+                CASE WHEN NEW.status = 'SENT' AND OLD.status != 'SENT' THEN 1
+                     WHEN OLD.status = 'SENT' AND NEW.status != 'SENT' THEN -1
+                     ELSE 0 END,
+            failed_messages = failed_messages + 
+                CASE WHEN NEW.status = 'FAILED' AND OLD.status != 'FAILED' THEN 1
+                     WHEN OLD.status = 'FAILED' AND NEW.status != 'FAILED' THEN -1
+                     ELSE 0 END,
+            updated_at = CURRENT_TIMESTAMP;
+    END IF;
+END
+$$
+DELIMITER ;
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `messages_with_files`
+-- (See below for the actual view)
+--
+CREATE TABLE `messages_with_files` (
+`id` bigint
+,`phone_number` varchar(255)
+,`text_message` text
+,`file_url` varchar(255)
+,`file_name` varchar(255)
+,`file_type` varchar(255)
+,`status` enum('PENDING','SENT','DELIVERED','FAILED')
+,`created_at` timestamp
+);
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `message_stats`
+-- (See below for the actual view)
+--
+CREATE TABLE `message_stats` (
+`status` enum('PENDING','SENT','DELIVERED','FAILED')
+,`count` bigint
+,`date` date
+);
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `recent_messages`
+-- (See below for the actual view)
+--
+CREATE TABLE `recent_messages` (
+`id` bigint
+,`phone_number` varchar(255)
+,`text_message` text
+,`file_name` varchar(255)
+,`status` enum('PENDING','SENT','DELIVERED','FAILED')
+,`created_at` timestamp
+);
+
+-- --------------------------------------------------------
+
+--
+-- Structure for view `messages_with_files`
+--
+DROP TABLE IF EXISTS `messages_with_files`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `messages_with_files`  AS SELECT `messages`.`id` AS `id`, `messages`.`phone_number` AS `phone_number`, `messages`.`text_message` AS `text_message`, `messages`.`file_url` AS `file_url`, `messages`.`file_name` AS `file_name`, `messages`.`file_type` AS `file_type`, `messages`.`status` AS `status`, `messages`.`created_at` AS `created_at` FROM `messages` WHERE (`messages`.`file_url` is not null) ORDER BY `messages`.`created_at` AS `DESCdesc` ASC  ;
+
+-- --------------------------------------------------------
+
+--
+-- Structure for view `message_stats`
+--
+DROP TABLE IF EXISTS `message_stats`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `message_stats`  AS SELECT `messages`.`status` AS `status`, count(0) AS `count`, cast(`messages`.`created_at` as date) AS `date` FROM `messages` GROUP BY `messages`.`status`, cast(`messages`.`created_at` as date) ORDER BY `date` DESC, `messages`.`status` ASC  ;
+
+-- --------------------------------------------------------
+
+--
+-- Structure for view `recent_messages`
+--
+DROP TABLE IF EXISTS `recent_messages`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `recent_messages`  AS SELECT `messages`.`id` AS `id`, `messages`.`phone_number` AS `phone_number`, `messages`.`text_message` AS `text_message`, `messages`.`file_name` AS `file_name`, `messages`.`status` AS `status`, `messages`.`created_at` AS `created_at` FROM `messages` WHERE (`messages`.`created_at` >= (now() - interval 7 day)) ORDER BY `messages`.`created_at` AS `DESCdesc` ASC  ;
+
+--
+-- Indexes for dumped tables
+--
+
+--
+-- Indexes for table `app_config`
+--
+ALTER TABLE `app_config`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `config_key` (`config_key`);
+
+--
+-- Indexes for table `daily_stats`
+--
+ALTER TABLE `daily_stats`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `date` (`date`),
+  ADD KEY `idx_date` (`date`);
+
+--
+-- Indexes for table `error_logs`
+--
+ALTER TABLE `error_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_message_id` (`message_id`),
+  ADD KEY `idx_error_type` (`error_type`),
+  ADD KEY `idx_created_at` (`created_at`);
+
+--
+-- Indexes for table `messages`
+--
+ALTER TABLE `messages`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_phone_number` (`phone_number`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_created_at` (`created_at`),
+  ADD KEY `idx_whatsapp_message_id` (`whatsapp_message_id`);
+
+--
+-- AUTO_INCREMENT for dumped tables
+--
+
+--
+-- AUTO_INCREMENT for table `app_config`
+--
+ALTER TABLE `app_config`
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+
+--
+-- AUTO_INCREMENT for table `daily_stats`
+--
+ALTER TABLE `daily_stats`
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+
+--
+-- AUTO_INCREMENT for table `error_logs`
+--
+ALTER TABLE `error_logs`
+  MODIFY `id` bigint NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `messages`
+--
+ALTER TABLE `messages`
+  MODIFY `id` bigint NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `error_logs`
+--
+ALTER TABLE `error_logs`
+  ADD CONSTRAINT `error_logs_ibfk_1` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE SET NULL;
+COMMIT;
+
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
